@@ -31,6 +31,11 @@ module.exports = function createPlugin(app) {
                 minLength: 32,
                 maxLength: 32
               },
+              secondaryBattery: {
+                title: 'Secondary battery ID',
+                description: 'Publish BMV/SmartShunt auxiliary voltage as a separate Signal K battery',
+                type: 'string'
+              },
               enabled: { title: 'Enabled', type: 'boolean', default: true }
             }
           }
@@ -120,6 +125,22 @@ function measurementDelta(device, decoded) {
   const values = decoded.measurements
   const builder = PATH_BUILDERS[decoded.record_type]
   const candidates = builder ? builder(device.id, values) : []
+
+  // A BMV/SmartShunt can advertise its auxiliary input as a starter battery
+  // voltage. When configured, expose that reading as a separate Signal K
+  // battery so existing consumers can use the standard battery voltage path.
+  if (
+    decoded.record_type === 0x02 &&
+    device.secondaryBattery &&
+    values.aux_input === 'aux_voltage' &&
+    values.aux_voltage_v != null
+  ) {
+    candidates.push([
+      `electrical.batteries.${device.secondaryBattery}.voltage`,
+      values.aux_voltage_v
+    ])
+  }
+
   return {
     updates: [{
       source: { label: 'Victron BLE', src: device.id },
